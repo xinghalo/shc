@@ -228,10 +228,14 @@ case class HBaseRelation(
         }
       val put = timestamp.fold(new Put(rBytes))(new Put(rBytes, _))
       colsIdxedFields.foreach { case (x, y) =>
-        put.addColumn(
-          coder.toBytes(y.cf),
-          coder.toBytes(y.col),
-          SHCDataTypeFactory.create(y).toBytes(row(x)))
+        // 当value不为null时，才加入到更新Putter里面
+        if (row(x) != null){
+          put.addColumn(
+            coder.toBytes(y.cf),
+            coder.toBytes(y.col),
+            SHCDataTypeFactory.create(y).toBytes(row(x)))
+        }
+
       }
       count += 1
       (new ImmutableBytesWritable, put)
@@ -240,6 +244,9 @@ case class HBaseRelation(
     rdd.mapPartitions(iter => {
       SHCCredentialsManager.processShcToken(serializedToken)
       iter.map(convertToPut)
+    }).filter(t2 => {
+      // 当全部值为null时，对应的二元组family个数为0，需要过滤掉，不然会报错。
+      t2._2.numFamilies()>0
     }).saveAsNewAPIHadoopDataset(jobConfig)
   }
 
